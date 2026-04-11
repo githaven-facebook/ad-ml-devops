@@ -1,0 +1,168 @@
+name: CI
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  PYTHON_VERSION: "3.10"
+  IMAGE_REGISTRY: gcr.io/fb-ads-ml
+
+jobs:
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+
+      - name: Install lint dependencies
+        run: pip install flake8==7.0.0 mypy==1.8.0 black==24.1.1 isort==5.13.2 types-PyYAML==6.0.12.12
+
+      - name: Run flake8
+        run: flake8 pipelines/ monitoring/ tests/
+
+      - name: Run black check
+        run: black --check pipelines/ monitoring/ tests/
+
+      - name: Run isort check
+        run: isort --check-only pipelines/ monitoring/ tests/
+
+      - name: Run mypy
+        run: mypy pipelines/ monitoring/
+        continue-on-error: true  # Type errors are warnings until full type coverage
+
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    needs: lint
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+
+      - name: Install test dependencies
+        run: |
+          pip install --upgrade pip
+          pip install \
+            pytest==7.4.4 \
+            pytest-asyncio==0.23.3 \
+            pytest-cov==4.1.0 \
+            pyyaml==6.0.1 \
+            numpy==1.26.3 \
+            pandas==2.2.0 \
+            scipy==1.12.0 \
+            scikit-learn==1.4.0 \
+            requests==2.31.0 \
+            prometheus-client==0.19.0
+
+      - name: Run tests
+        run: |
+          pytest tests/ -v --tb=short \
+            --ignore=tests/test_helm_charts.py \
+            -k "not compiles and not kfp" \
+            --cov=pipelines --cov=monitoring \
+            --cov-report=xml --cov-report=term-missing
+
+      - name: Upload coverage
+        uses: codecov/codecov-action@v4
+        if: always()
+        with:
+          file: coverage.xml
+          fail_ci_if_error: false
+
+  helm-lint:
+    name: Helm Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Helm
+        uses: azure/setup-helm@v4
+        with:
+          version: "3.14.0"
+
+      - name: Helm lint (default values)
+        run: helm lint helm/ml-serving/ --strict
+
+      - name: Helm lint (staging values)
+        run: |
+          helm lint helm/ml-serving/ \
+            --values helm/ml-serving/values.yaml \
+            --values helm/ml-serving/values-staging.yaml \
+            --strict
+
+      - name: Helm lint (production values)
+        run: |
+          helm lint helm/ml-serving/ \
+            --values helm/ml-serving/values.yaml \
+            --values helm/ml-serving/values-production.yaml \
+            --strict
+
+      - name: Helm template (staging)
+        run: |
+          helm template test-release helm/ml-serving/ \
+            --namespace ml-platform \
+            --values helm/ml-serving/values.yaml \
+            --values helm/ml-serving/values-staging.yaml \
+            --debug > /dev/null
+
+      - name: Helm template (production)
+        run: |
+          helm template test-release helm/ml-serving/ \
+            --namespace ml-platform \
+            --values helm/ml-serving/values.yaml \
+            --values helm/ml-serving/values-production.yaml \
+            --debug > /dev/null
+
+  docker-build:
+    name: Docker Build
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        dockerfile:
+          - docker/Dockerfile.pipeline
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build Docker image (no push)
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ${{ matrix.dockerfile }}
+          push: false
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          tags: ${{ env.IMAGE_REGISTRY }}/pipeline-runner:${{ github.sha }}
+
+  yaml-validate:
+    name: Validate YAML
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install yamllint
+        run: pip install yamllint==1.35.1
+
+      - name: Lint YAML files
+        run: |
+          yamllint -d "{extends: default, rules: {line-length: {max: 200}, truthy: disable}}" \
+            k8s/ pipelines/configs/ monitoring/alerting_config.yaml

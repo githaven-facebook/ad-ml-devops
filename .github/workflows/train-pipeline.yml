@@ -1,0 +1,118 @@
+name: Trigger Training Pipeline
+
+on:
+  workflow_dispatch:
+    inputs:
+      pipeline:
+        description: "Pipeline to trigger"
+        required: true
+        type: choice
+        options:
+          - user-persona
+          - autobid
+          - all
+        default: user-persona
+      environment:
+        description: "Target environment"
+        required: true
+        type: choice
+        options:
+          - staging
+          - production
+        default: staging
+      model_version:
+        description: "Model version tag (leave blank for auto-generated)"
+        required: false
+        type: string
+      wait_for_completion:
+        description: "Wait for pipeline to complete before finishing workflow"
+        required: false
+        type: boolean
+        default: false
+  schedule:
+    # User persona: daily at 02:00 UTC
+    - cron: "0 2 * * *"
+    # Autobid: every 6 hours
+    - cron: "0 */6 * * *"
+
+concurrency:
+  group: train-pipeline-${{ github.event.inputs.pipeline || 'scheduled' }}
+  cancel-in-progress: false
+
+env:
+  PYTHON_VERSION: "3.10"
+  KFP_HOST: ${{ secrets.KFP_HOST }}
+  MLFLOW_TRACKING_URI: ${{ secrets.MLFLOW_TRACKING_URI }}
+
+jobs:
+  trigger-pipeline:
+    name: Trigger ${{ github.event.inputs.pipeline || 'scheduled' }} pipeline
+    runs-on: ubuntu-latest
+    environment: ${{ github.event.inputs.environment || 'staging' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+
+      - name: Install KFP SDK
+        run: pip install kfp==2.5.0 pyyaml==6.0.1
+
+      - name: Configure kubectl
+        uses: azure/k8s-set-context@v4
+        with:
+          method: kubeconfig
+          kubeconfig: ${{ secrets.KUBECONFIG }}
+
+      - name: Set model version
+        id: version
+        run: |
+          if [ -n "${{ github.event.inputs.model_version }}" ]; then
+            echo "MODEL_VERSION=${{ github.event.inputs.model_version }}" >> $GITHUB_ENV
+          else
+            echo "MODEL_VERSION=$(date +%Y%m%d-%H%M%S)-${GITHUB_SHA::8}" >> $GITHUB_ENV
+          fi
+
+      - name: Trigger user-persona pipeline
+        if: |
+          github.event.inputs.pipeline == 'user-persona' ||
+          github.event.inputs.pipeline == 'all' ||
+          (github.event_name == 'schedule' && github.event.schedule == '0 2 * * *')
+        run: |
+          bash scripts/run-pipeline.sh \
+            --pipeline user-persona \
+            --host "${{ env.KFP_HOST }}" \
+            --env "${{ github.event.inputs.environment || 'staging' }}" \
+            --model-version "${{ env.MODEL_VERSION }}" \
+            --dataset-version "$(date +%Y%m%d)" \
+            ${{ github.event.inputs.wait_for_completion == 'true' && '--wait' || '' }}
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+          PAGERDUTY_ROUTING_KEY: ${{ secrets.PAGERDUTY_ROUTING_KEY }}
+
+      - name: Trigger autobid pipeline
+        if: |
+          github.event.inputs.pipeline == 'autobid' ||
+          github.event.inputs.pipeline == 'all' ||
+          (github.event_name == 'schedule' && github.event.schedule == '0 */6 * * *')
+        run: |
+          bash scripts/run-pipeline.sh \
+            --pipeline autobid \
+            --host "${{ env.KFP_HOST }}" \
+            --env "${{ github.event.inputs.environment || 'staging' }}" \
+            --model-version "${{ env.MODEL_VERSION }}" \
+            --dataset-version "$(date +%Y%m%d)" \
+            ${{ github.event.inputs.wait_for_completion == 'true' && '--wait' || '' }}
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+          PAGERDUTY_ROUTING_KEY: ${{ secrets.PAGERDUTY_ROUTING_KEY }}
+
+      - name: Notify pipeline triggered
+        if: always()
+        run: |
+          echo "Pipeline trigger complete."
+          echo "Model version: ${{ env.MODEL_VERSION }}"
+          echo "Environment: ${{ github.event.inputs.environment || 'staging' }}"

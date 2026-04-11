@@ -1,0 +1,145 @@
+name: Deploy Model
+
+on:
+  workflow_dispatch:
+    inputs:
+      model:
+        description: "Model to deploy"
+        required: true
+        type: choice
+        options:
+          - user-persona
+          - autobid
+        default: user-persona
+      version:
+        description: "Image tag / model version to deploy"
+        required: true
+        type: string
+      environment:
+        description: "Target environment"
+        required: true
+        type: choice
+        options:
+          - staging
+          - production
+        default: staging
+      dry_run:
+        description: "Dry run (do not actually deploy)"
+        required: false
+        type: boolean
+        default: false
+
+concurrency:
+  group: deploy-${{ github.event.inputs.model }}-${{ github.event.inputs.environment }}
+  cancel-in-progress: false  # Never cancel an in-flight deployment
+
+env:
+  REGISTRY: gcr.io/fb-ads-ml
+  NAMESPACE: ml-platform
+
+jobs:
+  build-and-push:
+    name: Build and Push BentoML Image
+    runs-on: ubuntu-latest
+    environment: ${{ github.event.inputs.environment }}
+    outputs:
+      image_tag: ${{ steps.tag.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set image tag
+        id: tag
+        run: echo "tag=${{ github.event.inputs.version }}" >> $GITHUB_OUTPUT
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+      - name: Configure Docker for GCR
+        run: gcloud auth configure-docker gcr.io --quiet
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+          cache: pip
+
+      - name: Install BentoML
+        run: pip install bentoml==1.2.5 mlflow==2.10.0
+
+      - name: Build and push bento image
+        if: ${{ github.event.inputs.dry_run != 'true' }}
+        run: |
+          bash scripts/deploy-model.sh \
+            --model "${{ github.event.inputs.model }}" \
+            --version "${{ steps.tag.outputs.tag }}" \
+            --env "${{ github.event.inputs.environment }}"
+        env:
+          REGISTRY: ${{ env.REGISTRY }}
+          MLFLOW_TRACKING_URI: ${{ secrets.MLFLOW_TRACKING_URI }}
+
+      - name: Dry run
+        if: ${{ github.event.inputs.dry_run == 'true' }}
+        run: |
+          bash scripts/deploy-model.sh \
+            --model "${{ github.event.inputs.model }}" \
+            --version "${{ steps.tag.outputs.tag }}" \
+            --env "${{ github.event.inputs.environment }}" \
+            --dry-run
+
+  deploy:
+    name: Deploy to ${{ github.event.inputs.environment }}
+    runs-on: ubuntu-latest
+    needs: build-and-push
+    environment: ${{ github.event.inputs.environment }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Helm
+        uses: azure/setup-helm@v4
+        with:
+          version: "3.14.0"
+
+      - name: Configure kubectl
+        uses: azure/k8s-set-context@v4
+        with:
+          method: kubeconfig
+          kubeconfig: ${{ secrets.KUBECONFIG }}
+
+      - name: Helm upgrade
+        if: ${{ github.event.inputs.dry_run != 'true' }}
+        run: |
+          helm upgrade --install \
+            "ml-serving-${{ github.event.inputs.model }}" \
+            helm/ml-serving/ \
+            --namespace "${{ env.NAMESPACE }}" \
+            --create-namespace \
+            --values helm/ml-serving/values.yaml \
+            --values "helm/ml-serving/values-${{ github.event.inputs.environment }}.yaml" \
+            --set "image.tag=${{ needs.build-and-push.outputs.image_tag }}" \
+            --set "model.name=${{ github.event.inputs.model }}" \
+            --timeout 10m \
+            --atomic \
+            --cleanup-on-fail \
+            --history-max 5
+
+      - name: Verify rollout
+        if: ${{ github.event.inputs.dry_run != 'true' }}
+        run: |
+          kubectl rollout status \
+            "deployment/ml-serving-${{ github.event.inputs.model }}" \
+            -n "${{ env.NAMESPACE }}" \
+            --timeout=10m
+
+      - name: Post deployment summary
+        if: always()
+        run: |
+          echo "## Deployment Summary" >> $GITHUB_STEP_SUMMARY
+          echo "| Key | Value |" >> $GITHUB_STEP_SUMMARY
+          echo "|-----|-------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Model | ${{ github.event.inputs.model }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Version | ${{ needs.build-and-push.outputs.image_tag }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Environment | ${{ github.event.inputs.environment }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Dry Run | ${{ github.event.inputs.dry_run }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Actor | ${{ github.actor }} |" >> $GITHUB_STEP_SUMMARY
