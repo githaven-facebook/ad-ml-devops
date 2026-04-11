@@ -1,0 +1,50 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: gpu-node-pool-config
+  namespace: ml-platform
+  labels:
+    app.kubernetes.io/component: gpu-config
+data:
+  node-selector: "cloud.google.com/gke-accelerator=nvidia-tesla-a100"
+  gpu-count: "4"
+  machine-type: "a2-highgpu-4g"
+---
+# RuntimeClass for GPU workloads
+apiVersion: node.k8s.io/v1
+kind: RuntimeClass
+metadata:
+  name: nvidia
+handler: nvidia
+scheduling:
+  nodeClassRef:
+    apiGroup: node.k8s.io
+    kind: NodeClass
+    name: gpu-nodes
+  tolerations:
+    - key: "nvidia.com/gpu"
+      operator: "Exists"
+      effect: "NoSchedule"
+    - key: "cloud.google.com/gke-accelerator"
+      operator: "Exists"
+      effect: "NoSchedule"
+---
+# LimitRange to set GPU defaults
+apiVersion: v1
+kind: LimitRange
+metadata:
+  name: gpu-limit-range
+  namespace: ml-platform
+  labels:
+    app.kubernetes.io/component: gpu-config
+spec:
+  limits:
+    - type: Container
+      max:
+        nvidia.com/gpu: "8"
+      default:
+        cpu: "2"
+        memory: "8Gi"
+      defaultRequest:
+        cpu: "500m"
+        memory: "2Gi"
