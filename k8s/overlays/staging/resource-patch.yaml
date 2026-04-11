@@ -1,0 +1,17 @@
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: ml-platform-quota
+  namespace: ml-platform
+spec:
+  hard:
+    requests.nvidia.com/gpu: "4"
+    limits.nvidia.com/gpu: "4"
+    requests.cpu: "32"
+    limits.cpu: "64"
+    requests.memory: "128Gi"
+    limits.memory: "256Gi"
+    requests.storage: "10Ti"
+    persistentvolumeclaims: "20"
+    pods: "100"
+    services: "20"
