@@ -1,0 +1,14 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "ml-serving.fullname" . }}-config
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "ml-serving.labels" . | nindent 4 }}
+data:
+  {{- range $key, $value := .Values.configmap.featureFlags }}
+  {{ $key }}: {{ $value | quote }}
+  {{- end }}
+  MODEL_NAME: {{ .Values.model.name | quote }}
+  MODEL_VERSION: {{ .Values.model.version | quote }}
+  MLFLOW_TRACKING_URI: {{ .Values.model.mlflowTrackingUri | quote }}

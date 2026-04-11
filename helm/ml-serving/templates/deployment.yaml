@@ -1,0 +1,127 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "ml-serving.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "ml-serving.labels" . | nindent 4 }}
+  annotations:
+    meta.fb.com/model-name: {{ .Values.model.name | quote }}
+    meta.fb.com/model-version: {{ .Values.model.version | quote }}
+spec:
+  {{- if not .Values.autoscaling.enabled }}
+  replicas: {{ .Values.replicaCount }}
+  {{- end }}
+  selector:
+    matchLabels:
+      {{- include "ml-serving.selectorLabels" . | nindent 6 }}
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  template:
+    metadata:
+      labels:
+        {{- include "ml-serving.labels" . | nindent 8 }}
+      annotations:
+        {{- toYaml .Values.podAnnotations | nindent 8 }}
+        checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+    spec:
+      serviceAccountName: {{ include "ml-serving.serviceAccountName" . }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      {{- with .Values.global.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- if .Values.topologySpreadConstraints }}
+      topologySpreadConstraints:
+        {{- toYaml .Values.topologySpreadConstraints | nindent 8 }}
+      {{- end }}
+      {{- if .Values.gpu.enabled }}
+      tolerations:
+        {{- include "ml-serving.gpuTolerations" . | nindent 8 }}
+      nodeSelector:
+        {{- include "ml-serving.gpuNodeSelector" . | nindent 8 }}
+      {{- end }}
+      initContainers:
+        {{- if .Values.initContainer.enabled }}
+        - name: model-downloader
+          image: {{ .Values.initContainer.image }}
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          command:
+            - /bin/sh
+            - -c
+            - |
+              echo "Downloading model {{ .Values.model.name }}:{{ .Values.model.version }}..."
+              mlflow models download \
+                --model-uri "models:/{{ .Values.model.name }}/{{ .Values.model.version }}" \
+                --output-path /mnt/models/{{ .Values.model.name }} \
+                --tracking-uri {{ .Values.model.mlflowTrackingUri }}
+              echo "Model download complete."
+          env:
+            - name: MLFLOW_TRACKING_URI
+              value: {{ .Values.model.mlflowTrackingUri | quote }}
+            - name: AWS_DEFAULT_REGION
+              value: us-east-1
+          resources:
+            {{- toYaml .Values.initContainer.resources | nindent 12 }}
+          volumeMounts:
+            - name: model-cache
+              mountPath: /mnt/models
+          timeoutSeconds: {{ .Values.model.downloadTimeout }}
+        {{- end }}
+      containers:
+        - name: {{ .Chart.Name }}
+          image: {{ include "ml-serving.image" . }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          ports:
+            - name: http
+              containerPort: 3000
+              protocol: TCP
+            - name: metrics
+              containerPort: 3000
+              protocol: TCP
+          env:
+            - name: BENTOML_CONFIG
+              value: /etc/bentoml/configuration.yaml
+            - name: MODEL_NAME
+              value: {{ .Values.model.name | quote }}
+            - name: MODEL_VERSION
+              value: {{ .Values.model.version | quote }}
+            - name: MLFLOW_TRACKING_URI
+              value: {{ .Values.model.mlflowTrackingUri | quote }}
+            - name: MODEL_STORAGE_URI
+              value: {{ .Values.model.storageUri | quote }}
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: POD_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+            - name: POD_IP
+              valueFrom:
+                fieldRef:
+                  fieldPath: status.podIP
+          envFrom:
+            - configMapRef:
+                name: {{ include "ml-serving.fullname" . }}-config
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          livenessProbe:
+            {{- toYaml .Values.livenessProbe | nindent 12 }}
+          readinessProbe:
+            {{- toYaml .Values.readinessProbe | nindent 12 }}
+          volumeMounts:
+            {{- toYaml .Values.volumeMounts | nindent 12 }}
+      volumes:
+        {{- toYaml .Values.volumes | nindent 8 }}
+      terminationGracePeriodSeconds: 60
+      priorityClassName: ml-serving-high

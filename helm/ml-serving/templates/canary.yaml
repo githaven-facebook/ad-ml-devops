@@ -1,0 +1,115 @@
+{{- if .Values.canary.enabled }}
+apiVersion: argoproj.io/v1alpha1
+kind: Rollout
+metadata:
+  name: {{ include "ml-serving.fullname" . }}-canary
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "ml-serving.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "ml-serving.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "ml-serving.labels" . | nindent 8 }}
+      annotations:
+        {{- toYaml .Values.podAnnotations | nindent 8 }}
+    spec:
+      serviceAccountName: {{ include "ml-serving.serviceAccountName" . }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      {{- if .Values.gpu.enabled }}
+      tolerations:
+        {{- include "ml-serving.gpuTolerations" . | nindent 8 }}
+      nodeSelector:
+        {{- include "ml-serving.gpuNodeSelector" . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: {{ .Chart.Name }}
+          image: {{ include "ml-serving.image" . }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          ports:
+            - name: http
+              containerPort: 3000
+              protocol: TCP
+          envFrom:
+            - configMapRef:
+                name: {{ include "ml-serving.fullname" . }}-config
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          livenessProbe:
+            {{- toYaml .Values.livenessProbe | nindent 12 }}
+          readinessProbe:
+            {{- toYaml .Values.readinessProbe | nindent 12 }}
+          volumeMounts:
+            {{- toYaml .Values.volumeMounts | nindent 12 }}
+      volumes:
+        {{- toYaml .Values.volumes | nindent 8 }}
+  strategy:
+    canary:
+      canaryService: {{ include "ml-serving.fullname" . }}-canary
+      stableService: {{ include "ml-serving.fullname" . }}
+      trafficRouting:
+        nginx:
+          stableIngress: {{ include "ml-serving.fullname" . }}
+      steps:
+        {{- range .Values.canary.steps }}
+        - {{- if .setWeight }}
+          setWeight: {{ .setWeight }}
+          {{- else if .pause }}
+          pause:
+            {{- if .pause.duration }}
+            duration: {{ .pause.duration }}
+            {{- else }}
+            {}
+            {{- end }}
+          {{- end }}
+        {{- end }}
+      analysis:
+        templates:
+          - templateName: ml-serving-success-rate
+        startingStep: 2
+        args:
+          - name: service-name
+            value: {{ include "ml-serving.fullname" . }}-canary
+---
+apiVersion: argoproj.io/v1alpha1
+kind: AnalysisTemplate
+metadata:
+  name: ml-serving-success-rate
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "ml-serving.labels" . | nindent 4 }}
+spec:
+  args:
+    - name: service-name
+  metrics:
+    - name: latency_p99
+      interval: 1m
+      successCondition: {{ .Values.canary.analysis.successCondition | quote }}
+      failureLimit: {{ .Values.canary.analysis.failureLimit }}
+      provider:
+        prometheus:
+          address: http://prometheus.monitoring.svc.cluster.local:9090
+          query: |
+            histogram_quantile(0.99,
+              sum(rate(bentoml_request_duration_seconds_bucket{service="{{`{{args.service-name}}`}}"}[1m]))
+              by (le)
+            )
+    - name: error_rate
+      interval: 1m
+      successCondition: "result(error_rate) < 0.01"
+      failureLimit: 3
+      provider:
+        prometheus:
+          address: http://prometheus.monitoring.svc.cluster.local:9090
+          query: |
+            sum(rate(bentoml_request_exception_total{service="{{`{{args.service-name}}`}}"}[1m]))
+            /
+            sum(rate(bentoml_request_total{service="{{`{{args.service-name}}`}}"}[1m]))
+{{- end }}

@@ -1,0 +1,49 @@
+# Staging environment overrides for ml-serving Helm chart.
+
+replicaCount: 1
+
+image:
+  tag: staging-latest
+
+resources:
+  requests:
+    cpu: "1"
+    memory: "4Gi"
+    nvidia.com/gpu: "1"
+  limits:
+    cpu: "2"
+    memory: "8Gi"
+    nvidia.com/gpu: "1"
+
+autoscaling:
+  enabled: true
+  minReplicas: 1
+  maxReplicas: 3
+  targetCPUUtilizationPercentage: 80
+
+podDisruptionBudget:
+  enabled: false
+
+ingress:
+  hosts:
+    - host: ml-serving-staging.ml-platform.svc.cluster.local
+      paths:
+        - path: /
+          pathType: Prefix
+  tls:
+    - secretName: ml-serving-staging-tls
+      hosts:
+        - ml-serving-staging.ml-platform.svc.cluster.local
+
+model:
+  version: Staging
+
+configmap:
+  featureFlags:
+    enable_response_caching: "false"
+    enable_adaptive_batching: "true"
+    max_batch_size: "256"
+    enable_model_warmup: "false"
+
+canary:
+  enabled: false

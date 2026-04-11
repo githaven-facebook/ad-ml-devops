@@ -1,0 +1,190 @@
+# Default values for ml-serving Helm chart.
+# Override in values-staging.yaml or values-production.yaml.
+
+global:
+  imageRegistry: "gcr.io/fb-ads-ml"
+  imagePullSecrets: []
+  storageClass: "standard"
+
+image:
+  repository: gcr.io/fb-ads-ml/user-persona
+  tag: latest
+  pullPolicy: IfNotPresent
+
+replicaCount: 2
+
+nameOverride: ""
+fullnameOverride: ""
+
+serviceAccount:
+  create: true
+  annotations:
+    iam.gke.io/gcp-service-account: "ml-serving@fb-ads-ml.iam.gserviceaccount.com"
+  name: "ml-serving"
+
+podAnnotations:
+  prometheus.io/scrape: "true"
+  prometheus.io/port: "3000"
+  prometheus.io/path: "/metrics"
+
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 1000
+  fsGroup: 1000
+  seccompProfile:
+    type: RuntimeDefault
+
+securityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities:
+    drop:
+      - ALL
+
+service:
+  type: ClusterIP
+  port: 80
+  targetPort: 3000
+  annotations: {}
+
+ingress:
+  enabled: true
+  className: nginx
+  annotations:
+    nginx.ingress.kubernetes.io/proxy-body-size: "20m"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "60"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "60"
+    nginx.ingress.kubernetes.io/rate-limit-connections: "100"
+    nginx.ingress.kubernetes.io/rate-limit-rps: "1000"
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+  hosts:
+    - host: ml-serving.ml-platform.svc.cluster.local
+      paths:
+        - path: /
+          pathType: Prefix
+  tls:
+    - secretName: ml-serving-tls
+      hosts:
+        - ml-serving.ml-platform.svc.cluster.local
+
+resources:
+  requests:
+    cpu: "2"
+    memory: "8Gi"
+    nvidia.com/gpu: "1"
+  limits:
+    cpu: "4"
+    memory: "16Gi"
+    nvidia.com/gpu: "1"
+
+gpu:
+  enabled: true
+  type: nvidia-tesla-a100
+  tolerations:
+    - key: "nvidia.com/gpu"
+      operator: "Exists"
+      effect: "NoSchedule"
+  nodeSelector:
+    cloud.google.com/gke-accelerator: nvidia-tesla-a100
+
+autoscaling:
+  enabled: true
+  minReplicas: 2
+  maxReplicas: 10
+  targetCPUUtilizationPercentage: 70
+  targetMemoryUtilizationPercentage: 80
+  customMetrics:
+    - name: bentoml_request_duration_seconds_p99
+      target: 0.1
+    - name: bentoml_runner_queue_size
+      target: 50
+
+podDisruptionBudget:
+  enabled: true
+  minAvailable: 1
+
+model:
+  name: user-persona
+  version: Production
+  mlflowTrackingUri: "http://mlflow.ml-platform.svc.cluster.local:5000"
+  storageUri: "gs://fb-ads-ml-models"
+  downloadTimeout: 300
+
+initContainer:
+  enabled: true
+  image: gcr.io/fb-ads-ml/model-downloader:latest
+  resources:
+    requests:
+      cpu: "500m"
+      memory: "2Gi"
+    limits:
+      cpu: "1"
+      memory: "4Gi"
+
+livenessProbe:
+  httpGet:
+    path: /health
+    port: 3000
+  initialDelaySeconds: 60
+  periodSeconds: 30
+  failureThreshold: 3
+  timeoutSeconds: 10
+
+readinessProbe:
+  httpGet:
+    path: /health
+    port: 3000
+  initialDelaySeconds: 30
+  periodSeconds: 15
+  failureThreshold: 3
+  timeoutSeconds: 5
+
+volumeMounts:
+  - name: model-cache
+    mountPath: /mnt/models
+  - name: tmp
+    mountPath: /tmp
+  - name: bentoml-home
+    mountPath: /home/bentoml
+
+volumes:
+  - name: model-cache
+    emptyDir:
+      sizeLimit: 20Gi
+  - name: tmp
+    emptyDir:
+      sizeLimit: 1Gi
+  - name: bentoml-home
+    emptyDir:
+      sizeLimit: 2Gi
+
+configmap:
+  featureFlags:
+    enable_response_caching: "true"
+    cache_ttl_seconds: "5"
+    enable_adaptive_batching: "true"
+    max_batch_size: "512"
+    enable_model_warmup: "true"
+
+canary:
+  enabled: false
+  steps:
+    - setWeight: 10
+    - pause: {duration: 10m}
+    - setWeight: 30
+    - pause: {duration: 10m}
+    - setWeight: 50
+    - pause: {duration: 10m}
+  analysis:
+    successCondition: "result(latency_p99) < 0.1"
+    failureLimit: 3
+
+prometheus:
+  enabled: false
+
+grafana:
+  enabled: false
+
+nodeAffinity: {}
+topologySpreadConstraints: []
