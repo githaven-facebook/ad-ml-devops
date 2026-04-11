@@ -1,0 +1,73 @@
+# BentoML runtime configuration for ad-ml serving
+# https://docs.bentoml.com/en/latest/guides/configuration.html
+
+api_server:
+  workers: 2
+  timeout: 30
+  max_request_size: 20971520  # 20 MiB
+  backlog: 2048
+
+  http:
+    host: "0.0.0.0"
+    port: 3000
+    cors:
+      enabled: true
+      access_control_allow_origins:
+        - "https://ads.intern.facebook.com"
+        - "https://ads-staging.intern.facebook.com"
+      access_control_allow_methods:
+        - GET
+        - POST
+      access_control_allow_headers:
+        - Content-Type
+        - Authorization
+        - X-Request-ID
+
+runners:
+  user_persona_runner:
+    workers_per_resource: 1
+    timeout: 20
+    max_batch_size: 512
+    max_latency_ms: 100
+    batching:
+      enabled: true
+      max_batch_size: 512
+      max_latency_ms: 20
+    resources:
+      nvidia.com/gpu: 1
+      cpu: "4"
+      memory: "16Gi"
+
+  autobid_runner:
+    workers_per_resource: 2
+    timeout: 10
+    max_batch_size: 1024
+    max_latency_ms: 50
+    batching:
+      enabled: true
+      max_batch_size: 1024
+      max_latency_ms: 5
+    resources:
+      nvidia.com/gpu: 1
+      cpu: "4"
+      memory: "8Gi"
+
+tracing:
+  exporter_type: otlp
+  sample_rate: 0.1
+  otlp:
+    protocol: grpc
+    url: "http://otel-collector.monitoring.svc.cluster.local:4317"
+
+metrics:
+  enabled: true
+  namespace: bentoml
+  multiprocess: true
+
+logging:
+  access:
+    enabled: true
+    format:
+      trace_id: true
+      request_id: true
+  level: INFO
