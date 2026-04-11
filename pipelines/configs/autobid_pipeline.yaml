@@ -1,0 +1,63 @@
+# Pipeline parameters for Autobidding training pipeline
+# Runs every 6 hours. More conservative promotion criteria than user-persona.
+
+pipeline_name: autobid-training
+schedule: "0 */6 * * *"  # Every 6 hours
+max_concurrent_runs: 1
+enable_caching: true
+service_account: ml-pipeline-runner
+
+parameters:
+  # Data
+  dataset_uri: "s3://fb-ads-ml-data/autobid/train/latest"
+  schema_uri: "s3://fb-ads-ml-data/autobid/schema/v1.yaml"
+  reference_dataset_uri: "s3://fb-ads-ml-data/autobid/reference/latest"
+  eval_dataset_uri: "s3://fb-ads-ml-data/autobid/eval/latest"
+  shadow_dataset_uri: "s3://fb-ads-ml-data/autobid/shadow/latest"
+  dataset_version: ""  # Populated at runtime
+
+  # Validation — stricter for autobid
+  max_null_ratio: 0.02
+  min_rows: 5000000
+  max_drift_pvalue: 0.005
+
+  # Training
+  base_image: "gcr.io/fb-ads-ml/autobid-trainer:latest"
+  num_workers: 8
+  gpus_per_worker: 4
+  cpu_per_worker: "16"
+  memory_per_worker: "64Gi"
+  model_version: ""  # Populated at runtime
+  training_script: "ad_ml.autobid.train"
+
+  # Hyperparameters
+  learning_rate: 0.0005
+  batch_size: 4096
+  max_epochs: 10
+  num_layers: 8
+  hidden_dim: 256
+  dropout: 0.15
+  l2_reg: 0.0001
+
+  # MLflow
+  mlflow_tracking_uri: "http://mlflow.ml-platform.svc.cluster.local:5000"
+  mlflow_experiment: "autobid"
+
+  # Evaluation — conservative promotion criteria
+  baseline_model_version: "Production"
+  promotion_metric: "auc"
+  min_improvement_pct: 1.0
+  significance_level: 0.01
+
+  # Shadow test
+  max_shadow_latency_p99_ms: 50.0
+
+  # Notifications
+  slack_webhook_url: ""  # Injected from K8s secret at runtime
+  pagerduty_routing_key: ""  # Injected from K8s secret at runtime
+  alert_on_failure: true
+
+resource_config:
+  pipeline_root: "gs://fb-ads-ml-pipelines/autobid"
+  node_selector:
+    cloud.google.com/gke-nodepool: pipeline-pool

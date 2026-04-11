@@ -1,0 +1,58 @@
+# Pipeline parameters for User Persona training pipeline
+# These values are injected at pipeline run time via KFP SDK or workflow dispatch.
+
+pipeline_name: user-persona-training
+schedule: "0 2 * * *"  # Daily at 02:00 UTC
+max_concurrent_runs: 1
+enable_caching: true
+service_account: ml-pipeline-runner
+
+parameters:
+  # Data
+  dataset_uri: "s3://fb-ads-ml-data/user-persona/train/latest"
+  schema_uri: "s3://fb-ads-ml-data/user-persona/schema/v1.yaml"
+  reference_dataset_uri: "s3://fb-ads-ml-data/user-persona/reference/latest"
+  eval_dataset_uri: "s3://fb-ads-ml-data/user-persona/eval/latest"
+  dataset_version: ""  # Populated at runtime by the triggering workflow
+
+  # Validation
+  max_null_ratio: 0.05
+  min_rows: 1000000
+  max_drift_pvalue: 0.01
+
+  # Training
+  base_image: "gcr.io/fb-ads-ml/user-persona-trainer:latest"
+  num_workers: 4
+  gpus_per_worker: 4
+  cpu_per_worker: "16"
+  memory_per_worker: "64Gi"
+  model_version: ""  # Populated at runtime
+  training_script: "ad_ml.user_persona.train"
+
+  # Hyperparameters
+  learning_rate: 0.001
+  batch_size: 2048
+  max_epochs: 20
+  embedding_dim: 128
+  num_layers: 6
+  dropout: 0.1
+
+  # MLflow
+  mlflow_tracking_uri: "http://mlflow.ml-platform.svc.cluster.local:5000"
+  mlflow_experiment: "user-persona"
+
+  # Evaluation
+  baseline_model_version: "Production"
+  promotion_metric: "auc"
+  min_improvement_pct: 0.5
+  significance_level: 0.05
+
+  # Notifications
+  slack_webhook_url: ""  # Injected from K8s secret at runtime
+  pagerduty_routing_key: ""  # Injected from K8s secret at runtime
+  alert_on_failure: true
+
+resource_config:
+  pipeline_root: "gs://fb-ads-ml-pipelines/user-persona"
+  node_selector:
+    cloud.google.com/gke-nodepool: pipeline-pool
