@@ -1,0 +1,64 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.backends.legacy:build"
+
+[project]
+name = "ad-ml-devops"
+version = "0.1.0"
+description = "ML DevOps infrastructure for ad model training and serving on Kubernetes"
+requires-python = ">=3.10"
+dependencies = [
+    "kfp==2.5.0",
+    "kfp-kubernetes==1.1.0",
+    "bentoml==1.2.5",
+    "kubernetes==29.0.0",
+    "boto3==1.34.0",
+    "pyyaml==6.0.1",
+    "mlflow==2.10.0",
+    "torch==2.2.0",
+    "numpy==1.26.3",
+    "pandas==2.2.0",
+    "scipy==1.12.0",
+    "scikit-learn==1.4.0",
+    "prometheus-client==0.19.0",
+    "requests==2.31.0",
+    "click==8.1.7",
+    "rich==13.7.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest==7.4.4",
+    "pytest-asyncio==0.23.3",
+    "pytest-cov==4.1.0",
+    "black==24.1.1",
+    "flake8==7.0.0",
+    "mypy==1.8.0",
+    "isort==5.13.2",
+    "types-PyYAML==6.0.12.12",
+    "types-requests==2.31.0.20240125",
+]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["pipelines*", "bentoml*", "monitoring*"]
+
+[tool.black]
+line-length = 100
+target-version = ["py310", "py311"]
+
+[tool.isort]
+profile = "black"
+line_length = 100
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+addopts = "--cov=pipelines --cov=monitoring --cov-report=term-missing"
+
+[tool.mypy]
+python_version = "3.10"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = true
+ignore_missing_imports = true
