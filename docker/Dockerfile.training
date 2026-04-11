@@ -1,0 +1,75 @@
+# syntax=docker/dockerfile:1.6
+# Multi-stage GPU training image for ad ML models.
+# Stage 1: build deps; Stage 2: lean runtime with non-root user.
+
+# ── Stage 1: dependency builder ───────────────────────────────────────────────
+FROM nvcr.io/nvidia/cuda:12.1.0-cudnn8-devel-ubuntu22.04 AS builder
+
+ENV DEBIAN_FRONTEND=noninteractive \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    python3.10 \
+    python3.10-dev \
+    python3-pip \
+    python3.10-venv \
+    build-essential \
+    git \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN python3.10 -m venv /opt/venv
+ENV PATH="/opt/venv/bin:$PATH"
+
+# Install PyTorch with CUDA 12.1
+RUN pip install --upgrade pip wheel setuptools && \
+    pip install torch==2.2.0 torchvision==0.17.0 torchaudio==2.2.0 \
+        --index-url https://download.pytorch.org/whl/cu121
+
+# Install remaining training dependencies
+COPY requirements-training.txt /tmp/requirements-training.txt
+RUN pip install -r /tmp/requirements-training.txt
+
+# ── Stage 2: runtime ──────────────────────────────────────────────────────────
+FROM nvcr.io/nvidia/cuda:12.1.0-cudnn8-runtime-ubuntu22.04 AS runtime
+
+ENV DEBIAN_FRONTEND=noninteractive \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PATH="/opt/venv/bin:$PATH" \
+    PYTHONPATH="/app:$PYTHONPATH" \
+    NCCL_DEBUG=INFO \
+    NCCL_SOCKET_IFNAME=eth0 \
+    OMP_NUM_THREADS=4
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    python3.10 \
+    libgomp1 \
+    libglib2.0-0 \
+    libnccl2 \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy virtualenv from builder
+COPY --from=builder /opt/venv /opt/venv
+
+# Non-root user
+RUN groupadd --gid 1000 trainer && \
+    useradd --uid 1000 --gid trainer --shell /bin/bash --create-home trainer
+
+WORKDIR /app
+
+# Copy training code
+COPY --chown=trainer:trainer . /app/
+
+USER trainer
+
+# Health check — verifies CUDA is available
+HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
+    CMD python3 -c "import torch; assert torch.cuda.is_available(), 'CUDA unavailable'" || exit 1
+
+ENTRYPOINT ["python3", "-m"]
+CMD ["torch.distributed.run", "--help"]

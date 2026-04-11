@@ -1,0 +1,73 @@
+# syntax=docker/dockerfile:1.6
+# BentoML serving image — optimized for low-latency GPU inference.
+# CUDA is optional: falls back to CPU if no GPU available at runtime.
+
+# ── Stage 1: dependency builder ───────────────────────────────────────────────
+FROM python:3.10-slim AS builder
+
+ENV DEBIAN_FRONTEND=noninteractive \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    git \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN python -m venv /opt/venv
+ENV PATH="/opt/venv/bin:$PATH"
+
+RUN pip install --upgrade pip wheel setuptools
+
+# PyTorch CPU-only for base; GPU support activated via CUDA base image swap
+COPY requirements-serving.txt /tmp/requirements-serving.txt
+RUN pip install -r /tmp/requirements-serving.txt
+
+# ── Stage 2: CUDA-capable runtime ─────────────────────────────────────────────
+FROM nvcr.io/nvidia/cuda:12.1.0-cudnn8-runtime-ubuntu22.04 AS runtime
+
+ENV DEBIAN_FRONTEND=noninteractive \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PATH="/opt/venv/bin:$PATH" \
+    PYTHONPATH="/app:$PYTHONPATH" \
+    BENTOML_HOME=/home/bentoml \
+    OMP_NUM_THREADS=4 \
+    TOKENIZERS_PARALLELISM=false \
+    CUDA_LAUNCH_BLOCKING=0
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    python3.10 \
+    libgomp1 \
+    libglib2.0-0 \
+    libgl1-mesa-glx \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY --from=builder /opt/venv /opt/venv
+
+# Non-root user
+RUN groupadd --gid 1000 bentoml && \
+    useradd --uid 1000 --gid bentoml --shell /bin/bash --create-home bentoml
+
+WORKDIR /app
+
+COPY --chown=bentoml:bentoml bentoml/ /app/bentoml/
+COPY --chown=bentoml:bentoml bentoml/configuration.yaml /etc/bentoml/configuration.yaml
+
+# Writable dirs for BentoML runtime
+RUN mkdir -p /home/bentoml /mnt/models /tmp && \
+    chown -R bentoml:bentoml /home/bentoml /mnt/models /tmp
+
+USER bentoml
+
+EXPOSE 3000
+
+HEALTHCHECK --interval=30s --timeout=10s --start-period=90s --retries=3 \
+    CMD curl -sf http://localhost:3000/health || exit 1
+
+ENTRYPOINT ["bentoml", "serve"]
+CMD ["bentoml.user_persona_service:svc", "--config", "/etc/bentoml/configuration.yaml"]

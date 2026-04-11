@@ -1,0 +1,37 @@
+# syntax=docker/dockerfile:1.6
+# Lightweight pipeline runner image for Kubeflow Pipeline components.
+# No GPU required — only kfp SDK, boto3, and utility libraries.
+
+FROM python:3.10-slim
+
+ENV DEBIAN_FRONTEND=noninteractive \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    PYTHONPATH="/app:$PYTHONPATH"
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    curl \
+    git \
+    jq \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY requirements-pipeline.txt /tmp/requirements-pipeline.txt
+RUN pip install --upgrade pip && \
+    pip install -r /tmp/requirements-pipeline.txt
+
+# Non-root user
+RUN groupadd --gid 1000 kfprunner && \
+    useradd --uid 1000 --gid kfprunner --shell /bin/bash --create-home kfprunner
+
+WORKDIR /app
+
+COPY --chown=kfprunner:kfprunner pipelines/ /app/pipelines/
+
+USER kfprunner
+
+HEALTHCHECK --interval=60s --timeout=5s --start-period=10s --retries=2 \
+    CMD python3 -c "import kfp; print('kfp version:', kfp.__version__)" || exit 1
+
+ENTRYPOINT ["python3"]
