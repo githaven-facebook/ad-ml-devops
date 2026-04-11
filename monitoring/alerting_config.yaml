@@ -1,0 +1,67 @@
+# Alerting configuration for ad ML model serving.
+# These thresholds are evaluated by model_monitor.py and data_drift_detector.py.
+# AlertManager rules are defined in k8s/monitoring/alerting-rules.yaml.
+
+models:
+  user-persona:
+    latency:
+      p99_threshold_ms: 100
+      p95_threshold_ms: 80
+      p50_threshold_ms: 30
+    error_rate:
+      threshold: 0.01          # 1% error rate
+      evaluation_window: 5m
+    throughput:
+      min_rps: 100
+      max_rps: 50000
+    prediction_drift:
+      psi_threshold: 0.2
+      kl_threshold: 0.5
+      js_threshold: 0.3
+      check_interval_minutes: 60
+    gpu_utilization:
+      max_utilization: 0.95
+      alert_if_below: 0.05     # Alert if GPU idle (model not serving)
+    monitoring_interval_seconds: 60
+
+  autobid:
+    latency:
+      p99_threshold_ms: 50     # Stricter SLA for autobid
+      p95_threshold_ms: 40
+      p50_threshold_ms: 15
+    error_rate:
+      threshold: 0.005         # 0.5% — stricter for financial impact
+      evaluation_window: 5m
+    throughput:
+      min_rps: 500
+      max_rps: 100000
+    prediction_drift:
+      psi_threshold: 0.15      # Stricter for autobid
+      kl_threshold: 0.3
+      js_threshold: 0.2
+      check_interval_minutes: 30
+    gpu_utilization:
+      max_utilization: 0.95
+      alert_if_below: 0.05
+    monitoring_interval_seconds: 30
+
+notifications:
+  slack:
+    channels:
+      - name: "#ml-platform-alerts"
+        severity: ["warning", "critical"]
+      - name: "#ml-platform-critical"
+        severity: ["critical"]
+    cooldown_minutes: 15       # Suppress duplicate alerts within window
+
+  pagerduty:
+    escalation_policy: "ml-platform-oncall"
+    trigger_on_severity: ["critical"]
+    auto_resolve: true
+    resolve_timeout_minutes: 60
+
+  alert_grouping:
+    group_by: ["model_name", "alert_type"]
+    group_wait: 30s
+    group_interval: 5m
+    repeat_interval: 4h

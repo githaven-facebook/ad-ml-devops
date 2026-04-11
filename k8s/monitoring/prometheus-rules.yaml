@@ -1,0 +1,109 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: ml-platform-recording-rules
+  namespace: monitoring
+  labels:
+    app.kubernetes.io/component: monitoring
+    prometheus: kube-prometheus
+    role: alert-rules
+spec:
+  groups:
+    - name: ml_model_latency
+      interval: 30s
+      rules:
+        - record: ml:model_request_latency_p50:rate5m
+          expr: |
+            histogram_quantile(0.50,
+              sum by (service, le) (
+                rate(bentoml_request_duration_seconds_bucket[5m])
+              )
+            )
+
+        - record: ml:model_request_latency_p95:rate5m
+          expr: |
+            histogram_quantile(0.95,
+              sum by (service, le) (
+                rate(bentoml_request_duration_seconds_bucket[5m])
+              )
+            )
+
+        - record: ml:model_request_latency_p99:rate5m
+          expr: |
+            histogram_quantile(0.99,
+              sum by (service, le) (
+                rate(bentoml_request_duration_seconds_bucket[5m])
+              )
+            )
+
+    - name: ml_model_throughput
+      interval: 30s
+      rules:
+        - record: ml:model_request_rate:rate5m
+          expr: |
+            sum by (service) (
+              rate(bentoml_request_total[5m])
+            )
+
+        - record: ml:model_error_rate:rate5m
+          expr: |
+            sum by (service) (
+              rate(bentoml_request_exception_total[5m])
+            )
+            /
+            sum by (service) (
+              rate(bentoml_request_total[5m])
+            )
+
+    - name: ml_runner_metrics
+      interval: 30s
+      rules:
+        - record: ml:runner_queue_size:avg5m
+          expr: |
+            avg by (service, runner_name) (
+              bentoml_runner_queue_size
+            )
+
+        - record: ml:runner_utilization:rate5m
+          expr: |
+            sum by (service, runner_name) (
+              rate(bentoml_runner_request_total[5m])
+            )
+
+    - name: ml_gpu_metrics
+      interval: 60s
+      rules:
+        - record: ml:gpu_utilization:avg5m
+          expr: |
+            avg by (pod, namespace) (
+              DCGM_FI_DEV_GPU_UTIL
+            ) / 100
+
+        - record: ml:gpu_memory_used_bytes:avg5m
+          expr: |
+            avg by (pod, namespace) (
+              DCGM_FI_DEV_FB_USED * 1024 * 1024
+            )
+
+    - name: ml_pipeline_metrics
+      interval: 60s
+      rules:
+        - record: ml:pipeline_run_duration_seconds:rate1h
+          expr: |
+            sum by (pipeline_name, status) (
+              increase(kubeflow_pipeline_run_duration_seconds_sum[1h])
+            )
+            /
+            sum by (pipeline_name, status) (
+              increase(kubeflow_pipeline_run_duration_seconds_count[1h])
+            )
+
+        - record: ml:pipeline_success_rate:rate24h
+          expr: |
+            sum by (pipeline_name) (
+              rate(kubeflow_pipeline_run_total{status="succeeded"}[24h])
+            )
+            /
+            sum by (pipeline_name) (
+              rate(kubeflow_pipeline_run_total[24h])
+            )

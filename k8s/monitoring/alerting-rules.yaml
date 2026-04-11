@@ -1,0 +1,133 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: ml-platform-alerting-rules
+  namespace: monitoring
+  labels:
+    app.kubernetes.io/component: monitoring
+    prometheus: kube-prometheus
+    role: alert-rules
+spec:
+  groups:
+    - name: ml_model_latency_alerts
+      rules:
+        - alert: MLModelHighLatencyP99
+          expr: |
+            ml:model_request_latency_p99:rate5m{service="user-persona"} > 0.1
+            or
+            ml:model_request_latency_p99:rate5m{service="autobid"} > 0.05
+          for: 5m
+          labels:
+            severity: warning
+            team: ml-platform
+          annotations:
+            summary: "High p99 latency for {{ $labels.service }}"
+            description: >
+              {{ $labels.service }} p99 latency is {{ $value | humanizeDuration }}
+              (threshold: user-persona=100ms, autobid=50ms).
+            runbook_url: "https://wiki.fb.com/ml-platform/runbooks/high-latency"
+
+        - alert: MLModelCriticalLatencyP99
+          expr: |
+            ml:model_request_latency_p99:rate5m{service="user-persona"} > 0.5
+            or
+            ml:model_request_latency_p99:rate5m{service="autobid"} > 0.2
+          for: 2m
+          labels:
+            severity: critical
+            team: ml-platform
+          annotations:
+            summary: "Critical p99 latency for {{ $labels.service }}"
+            description: >
+              {{ $labels.service }} p99 latency is critically high at {{ $value | humanizeDuration }}.
+              Immediate investigation required.
+            runbook_url: "https://wiki.fb.com/ml-platform/runbooks/high-latency"
+
+    - name: ml_model_error_rate_alerts
+      rules:
+        - alert: MLModelHighErrorRate
+          expr: |
+            ml:model_error_rate:rate5m > 0.01
+          for: 5m
+          labels:
+            severity: warning
+            team: ml-platform
+          annotations:
+            summary: "High error rate for {{ $labels.service }}"
+            description: >
+              {{ $labels.service }} error rate is {{ $value | humanizePercentage }}
+              (threshold: 1%).
+            runbook_url: "https://wiki.fb.com/ml-platform/runbooks/high-error-rate"
+
+        - alert: MLModelCriticalErrorRate
+          expr: |
+            ml:model_error_rate:rate5m > 0.05
+          for: 2m
+          labels:
+            severity: critical
+            team: ml-platform
+          annotations:
+            summary: "Critical error rate for {{ $labels.service }}"
+            description: >
+              {{ $labels.service }} error rate is critically high at {{ $value | humanizePercentage }}.
+            runbook_url: "https://wiki.fb.com/ml-platform/runbooks/high-error-rate"
+
+    - name: ml_prediction_drift_alerts
+      rules:
+        - alert: MLModelPredictionDrift
+          expr: |
+            ml_model_prediction_drift_psi > 0.2
+          for: 10m
+          labels:
+            severity: warning
+            team: ml-platform
+          annotations:
+            summary: "Prediction distribution drift detected for {{ $labels.model_name }}"
+            description: >
+              {{ $labels.model_name }} PSI={{ $value | humanize }} (threshold: 0.2).
+              Feature distribution has shifted from training baseline.
+            runbook_url: "https://wiki.fb.com/ml-platform/runbooks/prediction-drift"
+
+    - name: ml_gpu_alerts
+      rules:
+        - alert: MLGPUHighUtilization
+          expr: |
+            ml:gpu_utilization:avg5m > 0.95
+          for: 10m
+          labels:
+            severity: warning
+            team: ml-platform
+          annotations:
+            summary: "GPU utilization > 95% on {{ $labels.pod }}"
+            description: >
+              GPU utilization on pod {{ $labels.pod }} has been above 95% for 10 minutes.
+              Consider scaling up the deployment.
+
+        - alert: MLGPULowUtilization
+          expr: |
+            ml:gpu_utilization:avg5m < 0.05
+            and on(pod)
+            kube_pod_status_ready{condition="true", namespace="ml-platform"} == 1
+          for: 30m
+          labels:
+            severity: warning
+            team: ml-platform
+          annotations:
+            summary: "GPU idle on serving pod {{ $labels.pod }}"
+            description: >
+              GPU on pod {{ $labels.pod }} has been idle for 30 minutes. Model may not be loaded correctly.
+
+    - name: ml_pipeline_alerts
+      rules:
+        - alert: MLPipelineFailureRate
+          expr: |
+            1 - ml:pipeline_success_rate:rate24h < 0.8
+          for: 0m
+          labels:
+            severity: warning
+            team: ml-platform
+          annotations:
+            summary: "Pipeline {{ $labels.pipeline_name }} success rate below 80% in last 24h"
+            description: >
+              Pipeline {{ $labels.pipeline_name }} has a success rate of
+              {{ $value | humanizePercentage }} over the last 24 hours.
