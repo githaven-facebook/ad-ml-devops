@@ -89,7 +89,11 @@ def validate_training_data(
     logger.info("Loaded %d rows, %d columns", len(df), len(df.columns))
 
     # Row count check
-    report["checks"]["row_count"] = {"value": len(df), "threshold": min_rows, "passed": len(df) >= min_rows}
+    report["checks"]["row_count"] = {
+        "value": len(df),
+        "threshold": min_rows,
+        "passed": len(df) >= min_rows,
+    }
     if len(df) < min_rows:
         failures.append(f"Row count {len(df)} below minimum {min_rows}")
 
@@ -102,7 +106,11 @@ def validate_training_data(
         if col in df.columns and not str(df[col].dtype).startswith(expected_dtype):
             dtype_mismatches.append(f"{col}: expected {expected_dtype}, got {df[col].dtype}")
 
-    schema_check = {"missing_columns": list(missing_cols), "dtype_mismatches": dtype_mismatches, "passed": not missing_cols and not dtype_mismatches}
+    schema_check = {
+        "missing_columns": list(missing_cols),
+        "dtype_mismatches": dtype_mismatches,
+        "passed": not missing_cols and not dtype_mismatches,
+    }
     report["checks"]["schema"] = schema_check
     if missing_cols:
         failures.append(f"Missing columns: {missing_cols}")
@@ -127,7 +135,11 @@ def validate_training_data(
         latest = df[time_col].max()
         age_hours = (datetime.now(timezone.utc) - latest).total_seconds() / 3600
         freshness_ok = age_hours <= 48
-        report["checks"]["freshness"] = {"latest_record_age_hours": age_hours, "threshold_hours": 48, "passed": freshness_ok}
+        report["checks"]["freshness"] = {
+            "latest_record_age_hours": age_hours,
+            "threshold_hours": 48,
+            "passed": freshness_ok,
+        }
         if not freshness_ok:
             failures.append(f"Data stale: latest record is {age_hours:.1f}h old (threshold 48h)")
     else:
@@ -145,7 +157,11 @@ def validate_training_data(
             continue
         ks_stat, p_value = stats.ks_2samp(df[col].dropna(), ref_df[col].dropna())
         drifted = p_value < max_drift_pvalue
-        drift_results[col] = {"ks_statistic": float(ks_stat), "p_value": float(p_value), "drifted": drifted}
+        drift_results[col] = {
+            "ks_statistic": float(ks_stat),
+            "p_value": float(p_value),
+            "drifted": drifted,
+        }
         if drifted:
             drifted_features.append(col)
 

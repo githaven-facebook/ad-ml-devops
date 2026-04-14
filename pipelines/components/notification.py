@@ -70,13 +70,15 @@ def send_notification(
     ]
 
     if is_success and registered_model_version:
-        blocks.append({
-            "type": "section",
-            "text": {
-                "type": "mrkdwn",
-                "text": f"*Registered Model Version:* `{model_name} v{registered_model_version}` promoted to Staging",
-            },
-        })
+        blocks.append(
+            {
+                "type": "section",
+                "text": {
+                    "type": "mrkdwn",
+                    "text": f"*Registered Model Version:* `{model_name} v{registered_model_version}` promoted to Staging",
+                },
+            }
+        )
 
     slack_payload = {
         "attachments": [

@@ -1,0 +1,8 @@
+# Requirements for the Kubeflow Pipeline runner image (Dockerfile.pipeline).
+# Lightweight — no GPU/training libraries required.
+
+kfp==2.5.0
+boto3==1.34.0
+botocore==1.34.0
+pyyaml==6.0.1
+requests==2.31.0

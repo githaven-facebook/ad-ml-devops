@@ -105,8 +105,8 @@ class TestBidMultiplierClipping:
         "raw_value,expected",
         [
             (0.5, 0.5),
-            (0.05, 0.1),    # Clipped to min
-            (15.0, 10.0),   # Clipped to max
+            (0.05, 0.1),  # Clipped to min
+            (15.0, 10.0),  # Clipped to max
             (1.0, 1.0),
             (10.0, 10.0),
             (0.1, 0.1),

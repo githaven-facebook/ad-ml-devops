@@ -69,6 +69,7 @@ def run_shadow_test(
     def _load_data(uri: str) -> pd.DataFrame:
         if uri.startswith("s3://"):
             import boto3
+
             parts = uri[5:].split("/", 1)
             bucket, key = parts[0], parts[1]
             s3 = boto3.client("s3")
@@ -99,7 +100,13 @@ def run_shadow_test(
     p99 = float(np.percentile(latencies_ms, 99))
     latency_ok = p99 <= max_shadow_latency_p99_ms
 
-    logger.info("Latency p50=%.2fms p99=%.2fms threshold=%.2fms ok=%s", p50, p99, max_shadow_latency_p99_ms, latency_ok)
+    logger.info(
+        "Latency p50=%.2fms p99=%.2fms threshold=%.2fms ok=%s",
+        p50,
+        p99,
+        max_shadow_latency_p99_ms,
+        latency_ok,
+    )
 
     report = {
         "model_name": model_name,

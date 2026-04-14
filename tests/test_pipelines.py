@@ -35,7 +35,11 @@ class TestPipelineCompilation:
                     compiled = yaml.safe_load(f)
 
                 assert compiled is not None
-                assert "pipelineInfo" in compiled or "pipeline_info" in compiled or "components" in compiled
+                assert (
+                    "pipelineInfo" in compiled
+                    or "pipeline_info" in compiled
+                    or "components" in compiled
+                )
             finally:
                 os.unlink(output_path)
 
@@ -150,10 +154,12 @@ class TestDataValidationComponent:
         """Component should detect columns exceeding max null ratio."""
         import pandas as pd
 
-        df = pd.DataFrame({
-            "feature_a": [1.0, 2.0, None, 4.0, 5.0],  # 20% null
-            "feature_b": [1.0, 2.0, 3.0, 4.0, 5.0],
-        })
+        df = pd.DataFrame(
+            {
+                "feature_a": [1.0, 2.0, None, 4.0, 5.0],  # 20% null
+                "feature_b": [1.0, 2.0, 3.0, 4.0, 5.0],
+            }
+        )
 
         null_ratios = (df.isnull().sum() / len(df)).to_dict()
         max_null_ratio = 0.1

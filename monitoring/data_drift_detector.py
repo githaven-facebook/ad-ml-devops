@@ -21,9 +21,9 @@ class DriftDetectorConfig:
 
     model_name: str
     reference_dataset_uri: str
-    psi_threshold: float = 0.2        # PSI > 0.2 = significant drift
-    kl_threshold: float = 0.5         # KL divergence threshold
-    js_threshold: float = 0.3         # JS divergence threshold
+    psi_threshold: float = 0.2  # PSI > 0.2 = significant drift
+    kl_threshold: float = 0.5  # KL divergence threshold
+    js_threshold: float = 0.3  # JS divergence threshold
     n_bins: int = 20
     min_samples: int = 1000
     alert_on_drift: bool = True
@@ -99,9 +99,7 @@ class DataDriftDetector:
         )
 
     @staticmethod
-    def _compute_psi(
-        current: np.ndarray, reference: np.ndarray, n_bins: int = 20
-    ) -> float:
+    def _compute_psi(current: np.ndarray, reference: np.ndarray, n_bins: int = 20) -> float:
         """Compute Population Stability Index (PSI).
 
         PSI < 0.1: no significant drift
@@ -308,8 +306,14 @@ class DataDriftDetector:
                                 "type": "section",
                                 "fields": [
                                     {"type": "mrkdwn", "text": f"*Model:*\n{report.model_name}"},
-                                    {"type": "mrkdwn", "text": f"*Overall PSI:*\n{report.overall_psi:.3f}"},
-                                    {"type": "mrkdwn", "text": f"*Drifted Features:*\n{len(report.drifted_features)}/{report.features_checked}"},
+                                    {
+                                        "type": "mrkdwn",
+                                        "text": f"*Overall PSI:*\n{report.overall_psi:.3f}",
+                                    },
+                                    {
+                                        "type": "mrkdwn",
+                                        "text": f"*Drifted Features:*\n{len(report.drifted_features)}/{report.features_checked}",
+                                    },
                                 ],
                             },
                             {

@@ -81,13 +81,17 @@ def launch_training_job(
         {"name": "MASTER_PORT", "value": "29500"},
     ]
 
-    command = ["python", "-m", "torch.distributed.run",
-               f"--nproc_per_node={gpus_per_worker}",
-               "--nnodes=$(NUM_WORKERS)",
-               "--node_rank=$(RANK)",
-               "--master_addr=$(MASTER_ADDR)",
-               "--master_port=29500",
-               training_script]
+    command = [
+        "python",
+        "-m",
+        "torch.distributed.run",
+        f"--nproc_per_node={gpus_per_worker}",
+        "--nnodes=$(NUM_WORKERS)",
+        "--node_rank=$(RANK)",
+        "--master_addr=$(MASTER_ADDR)",
+        "--master_port=29500",
+        training_script,
+    ]
 
     worker_spec: dict = {
         "replicas": num_workers,
@@ -160,7 +164,12 @@ def launch_training_job(
         },
     }
 
-    logger.info("Creating PyTorchJob %s with %d workers, %d GPU each", job_name, num_workers, gpus_per_worker)
+    logger.info(
+        "Creating PyTorchJob %s with %d workers, %d GPU each",
+        job_name,
+        num_workers,
+        gpus_per_worker,
+    )
     custom_api.create_namespaced_custom_object(
         group="kubeflow.org",
         version="v1",
@@ -183,13 +192,19 @@ def launch_training_job(
             name=job_name,
         )
         conditions = job_status.get("status", {}).get("conditions", [])
-        phase = next((c["type"] for c in reversed(conditions) if c.get("status") == "True"), "Running")
+        phase = next(
+            (c["type"] for c in reversed(conditions) if c.get("status") == "True"), "Running"
+        )
 
-        logger.info("PyTorchJob %s phase: %s (elapsed %.0fs)", job_name, phase, time.time() - start_time)
+        logger.info(
+            "PyTorchJob %s phase: %s (elapsed %.0fs)", job_name, phase, time.time() - start_time
+        )
 
         if phase == "Succeeded":
             # Retrieve MLflow run ID from job annotation set by training code
-            mlflow_run_id = job_status.get("metadata", {}).get("annotations", {}).get("mlflow/run-id", "")
+            mlflow_run_id = (
+                job_status.get("metadata", {}).get("annotations", {}).get("mlflow/run-id", "")
+            )
             logger.info("Training completed. MLflow run ID: %s", mlflow_run_id)
             break
         if phase in ("Failed", "Suspended"):

@@ -71,6 +71,7 @@ def evaluate_model(
     def _load_parquet(uri: str) -> pd.DataFrame:
         if uri.startswith("s3://"):
             import boto3
+
             parts = uri[5:].split("/", 1)
             bucket, key = parts[0], parts[1]
             s3 = boto3.client("s3")
@@ -96,10 +97,13 @@ def evaluate_model(
     baseline_uri = f"models:/{model_name}/{baseline_model_version}"
     baseline_preds = _run_inference(baseline_uri, features)
 
-    def _compute_metric(metric: str, preds: np.ndarray, labels: np.ndarray) -> tuple[float, np.ndarray]:
+    def _compute_metric(
+        metric: str, preds: np.ndarray, labels: np.ndarray
+    ) -> tuple[float, np.ndarray]:
         """Return scalar metric value and per-sample scores for significance testing."""
         if metric == "auc":
             from sklearn.metrics import roc_auc_score
+
             # Compute per-bootstrap AUC via jackknife
             n = len(labels)
             indices = np.arange(n)
@@ -116,6 +120,7 @@ def evaluate_model(
 
         if metric == "ndcg_at_10":
             from sklearn.metrics import ndcg_score
+
             overall = float(ndcg_score(labels.reshape(1, -1), preds.reshape(1, -1), k=10))
             rng = np.random.default_rng(42)
             n = len(labels)
@@ -131,12 +136,15 @@ def evaluate_model(
 
         if metric in ("mse", "rmse"):
             from sklearn.metrics import mean_squared_error
+
             mse = mean_squared_error(labels, preds)
             return float(np.sqrt(mse) if metric == "rmse" else mse), preds - labels
 
         raise ValueError(f"Unsupported promotion_metric: {metric}")
 
-    candidate_score, candidate_bootstrap = _compute_metric(promotion_metric, candidate_preds, labels)
+    candidate_score, candidate_bootstrap = _compute_metric(
+        promotion_metric, candidate_preds, labels
+    )
     baseline_score, baseline_bootstrap = _compute_metric(promotion_metric, baseline_preds, labels)
 
     # Statistical significance test (two-sample t-test on bootstrap distributions)

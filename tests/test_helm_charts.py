@@ -25,9 +25,14 @@ def _helm_available() -> bool:
 def _helm_template(extra_values: str | None = None, set_args: list[str] | None = None) -> dict:
     """Run `helm template` and return parsed YAML documents as a list."""
     cmd = [
-        "helm", "template", "test-release", str(CHART_DIR),
-        "--namespace", "ml-platform",
-        "--values", str(VALUES_FILE),
+        "helm",
+        "template",
+        "test-release",
+        str(CHART_DIR),
+        "--namespace",
+        "ml-platform",
+        "--values",
+        str(VALUES_FILE),
     ]
     if extra_values:
         cmd += ["--values", extra_values]
@@ -41,9 +46,7 @@ def _helm_template(extra_values: str | None = None, set_args: list[str] | None =
 
     docs = list(yaml.safe_load_all(result.stdout))
     return {
-        f"{d['kind']}/{d['metadata']['name']}": d
-        for d in docs
-        if d is not None and "kind" in d
+        f"{d['kind']}/{d['metadata']['name']}": d for d in docs if d is not None and "kind" in d
     }
 
 
@@ -66,8 +69,14 @@ class TestValuesFiles:
             values = yaml.safe_load(f)
 
         required_keys = [
-            "image", "replicaCount", "service", "ingress",
-            "resources", "autoscaling", "model", "canary",
+            "image",
+            "replicaCount",
+            "service",
+            "ingress",
+            "resources",
+            "autoscaling",
+            "model",
+            "canary",
         ]
         for key in required_keys:
             assert key in values, f"Missing required key: {key}"
@@ -175,7 +184,9 @@ class TestHelmTemplates:
         resources = _helm_template(extra_values=str(VALUES_STAGING))
         # With autoscaling enabled the replica count isn't set in the template body,
         # but the HPA minReplicas should be lower than production
-        hpa = next((v for k, v in resources.items() if k.startswith("HorizontalPodAutoscaler/")), None)
+        hpa = next(
+            (v for k, v in resources.items() if k.startswith("HorizontalPodAutoscaler/")), None
+        )
         if hpa:
             assert hpa["spec"]["minReplicas"] <= 2
 
