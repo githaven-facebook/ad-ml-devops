@@ -169,8 +169,8 @@ class TestAutobidBatchDeduplication:
 
     def test_batch_cache_miss_indices_collected_correctly(self) -> None:
         """Campaigns that miss the cache should be collected for batch inference."""
-        from collections import OrderedDict
         import time
+        from collections import OrderedDict
 
         cache: OrderedDict = OrderedDict()
         cache["hash_b"] = (time.monotonic(), {"bid_multiplier": 1.2, "confidence": 0.9})

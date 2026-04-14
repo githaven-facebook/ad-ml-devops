@@ -179,8 +179,8 @@ class TestDataValidationComponent:
 
     def test_ks_test_detects_drift(self) -> None:
         """KS test should detect significant distribution shift."""
-        from scipy import stats
         import numpy as np
+        from scipy import stats
 
         rng = np.random.default_rng(42)
         reference = rng.normal(0, 1, 10000)
@@ -191,8 +191,8 @@ class TestDataValidationComponent:
 
     def test_ks_test_no_drift_for_same_distribution(self) -> None:
         """KS test should not flag same-distribution samples as drifted."""
-        from scipy import stats
         import numpy as np
+        from scipy import stats
 
         rng = np.random.default_rng(42)
         reference = rng.normal(0, 1, 10000)

@@ -9,6 +9,7 @@ from __future__ import annotations
 import logging
 import time
 from dataclasses import dataclass, field
+
 import numpy as np
 import requests
 from prometheus_client import CollectorRegistry, Gauge, push_to_gateway
