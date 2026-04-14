@@ -149,7 +149,6 @@ class TestDataValidationComponent:
     def test_null_ratio_detection(self) -> None:
         """Component should detect columns exceeding max null ratio."""
         import pandas as pd
-        import numpy as np
 
         df = pd.DataFrame({
             "feature_a": [1.0, 2.0, None, 4.0, 5.0],  # 20% null

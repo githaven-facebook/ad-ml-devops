@@ -66,7 +66,6 @@ def launch_training_job(
 
     config.load_incluster_config()
     custom_api = client.CustomObjectsApi()
-    _core_api = client.CoreV1Api()
 
     run_id = str(uuid.uuid4())[:8]
     job_name = f"{model_name}-train-{model_version.replace('.', '-')}-{run_id}"

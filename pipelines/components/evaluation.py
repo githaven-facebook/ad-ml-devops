@@ -64,7 +64,6 @@ def evaluate_model(
     with open(trained_model.path) as f:
         model_meta = json.load(f)
 
-    _candidate_run_id = model_meta["mlflow_run_id"]
     candidate_version = model_meta["model_version"]
 
     logger.info("Loading eval dataset from %s", eval_dataset_uri)
