@@ -59,15 +59,14 @@ def launch_training_job(
     import time
     import uuid
 
-    import yaml
-    from kubernetes import client, config, watch
+    from kubernetes import client, config
 
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
     logger = logging.getLogger(__name__)
 
     config.load_incluster_config()
     custom_api = client.CustomObjectsApi()
-    core_api = client.CoreV1Api()
+    _core_api = client.CoreV1Api()
 
     run_id = str(uuid.uuid4())[:8]
     job_name = f"{model_name}-train-{model_version.replace('.', '-')}-{run_id}"

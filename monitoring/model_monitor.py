@@ -9,11 +9,9 @@ from __future__ import annotations
 import logging
 import time
 from dataclasses import dataclass, field
-from typing import Any
-
 import numpy as np
 import requests
-from prometheus_client import CollectorRegistry, Counter, Gauge, Histogram, push_to_gateway
+from prometheus_client import CollectorRegistry, Gauge, push_to_gateway
 
 logger = logging.getLogger(__name__)
 

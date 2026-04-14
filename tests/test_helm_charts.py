@@ -173,7 +173,7 @@ class TestHelmTemplates:
     @pytest.mark.skipif(not _helm_available(), reason="helm not installed")
     def test_staging_values_reduce_replicas(self) -> None:
         resources = _helm_template(extra_values=str(VALUES_STAGING))
-        deployment = next((v for k, v in resources.items() if k.startswith("Deployment/")), None)
+        _deployment = next((v for k, v in resources.items() if k.startswith("Deployment/")), None)
         # With autoscaling enabled the replica count isn't set in the template body,
         # but the HPA minReplicas should be lower than production
         hpa = next((v for k, v in resources.items() if k.startswith("HorizontalPodAutoscaler/")), None)

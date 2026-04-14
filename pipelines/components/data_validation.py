@@ -1,7 +1,7 @@
 """KFP component: validate training data quality before launching a training job."""
 
 from kfp import dsl
-from kfp.dsl import Dataset, Input, Output
+from kfp.dsl import Dataset, Output
 
 
 @dsl.component(
